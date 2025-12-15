@@ -20,23 +20,7 @@ struct ContentView: View {
 
             VStack{
                            
-                HStack {
-                    Spacer()
-                        .frame(width: 133)
-                    PixelButton(
-                        text: "AO",
-                        action: {
-                            onNavigate(.settings)
-                        },
-                        width: 58,
-                        primaryColor: Color(red: 202/255, green: 202/255, blue: 202/255),
-                        secondaryColor:Color(red: 100/255, green: 100/255, blue: 100/255),
-                        highlightedColor:Color(red:255/255,green:255/255,blue:255/255),
-                        textColor: Color.black
-                    )
-                    
-                    
-                }
+
                 
                 Spacer()
                     .frame(height: 15)
@@ -53,20 +37,38 @@ struct ContentView: View {
 
                 )
                 Spacer()
-                    .frame(height: 15)
+                    .frame(height: 10)
                 
-                PixelButton(
-                    text: "TUTORIAL",
-                    action: {
-                        onNavigate(.tutorial)
-                    },
-                    width: 140,
-                    primaryColor: Color(red: 209/255,green: 211/255,blue: 38/255),
-                    secondaryColor: Color(red: 179/255,green: 181/255,blue: 31/255),
-                    highlightedColor: Color(red: 230/255,green: 232/255,blue: 90/255),
-                    textColor: Color.black
+                HStack{
+                    PixelButton(
+                        text: "TUTORIAL",
+                        action: {
+                            onNavigate(.tutorial)
+                        },
+                        width: 130,
+                        height: 43,
+                        primaryColor: Color(red: 0/255, green: 255/255, blue: 120/255),
+                        secondaryColor: Color(red: 0/255, green: 140/255, blue: 70/255),
+                        highlightedColor: Color(red: 180/255, green: 255/255, blue: 210/255),
+                        textColor: Color.black
 
-                )
+                    )
+                    
+                    PixelButton(
+                        icon : "IconSettings",
+                        action: {
+                            onNavigate(.settings)
+                        },
+                        width: 58,
+                        height: 43,
+                        primaryColor: Color(red: 209/255,green: 211/255,blue: 38/255),
+                        secondaryColor: Color(red: 179/255,green: 181/255,blue: 31/255),
+                        highlightedColor: Color(red: 230/255,green: 232/255,blue: 90/255),
+                        textColor: Color.black
+                    )
+
+                }
+
                 Spacer().frame(height: 25)
             
             }

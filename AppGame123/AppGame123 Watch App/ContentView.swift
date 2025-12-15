@@ -19,9 +19,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack{
-                           
-
-                
+                        
                 Spacer()
                     .frame(height: 15)
                 PixelButton(

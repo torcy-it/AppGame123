@@ -16,7 +16,8 @@ struct Card: Identifiable, Equatable {
 
 enum TurnState: Equatable {
     case normal(playerTurn: Bool)
-    case forced(flipsRemaining: Int, flipperIsPlayer: Bool, collectorIsPlayer: Bool)
+    case forced(playerTurn: Bool, flipsRemaining: Int)
+    case collecting(collectorIsPlayer: Bool)  // Nuovo stato per la raccolta
     indirect case paused(previous: TurnState)
     case gameOver
 }
@@ -27,16 +28,32 @@ final class GameViewModel: ObservableObject {
     // Decks
     @Published var playerDeck: [Card] = []
     @Published var cpuDeck: [Card] = []
-    @Published var centerPile: [Card] = []
+    @Published var tablePile: [Card] = []
+    @Published var visiblePile: [(card: Card, isPlayer: Bool)] = []
 
+    
     // UI state
     @Published var gameMessage = ""
     @Published var showMessage = false
     @Published var gameOver = false
     @Published var winner = ""
+    @Published var lastPlayedByPlayer: Bool = true
+    
+    // Display state - separato dalla logica per forzare aggiornamenti UI
+    @Published var displayMessage = ""  // Cosa mostrare sullo schermo (YOUR TURN, CPU TURN, etc)
+    @Published var displayColor: String = "green"  // "green", "pink", "yellow"
 
     // Game state
     @Published var turnState: TurnState = .normal(playerTurn: true)
+    
+    var isPlayerTurn: Bool {
+        switch turnState {
+        case .normal(let p), .forced(let p, _):
+            return p
+        default:
+            return false
+        }
+    }
 
     private var autoPlayTask: Task<Void, Never>?
 
@@ -61,14 +78,15 @@ final class GameViewModel: ObservableObject {
 
         playerDeck = Array(deck[0..<20])
         cpuDeck = Array(deck[20..<40])
-        centerPile = []
+        tablePile = []
+        visiblePile = []
 
         turnState = .normal(playerTurn: true)
         startAutoPlay()
     }
 
     // MARK: - Auto Play Loop
-    func startAutoPlay(intervalSeconds: Double = 1.3) {
+    func startAutoPlay(intervalSeconds: Double = 1.8) {  // Rallentato da 1.3 a 1.8
         autoPlayTask?.cancel()
 
         autoPlayTask = Task { [weak self] in
@@ -79,9 +97,8 @@ final class GameViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: ns)
 
-                // se in pausa o game over, non giocare carte
                 switch self.turnState {
-                case .paused, .gameOver:
+                case .paused, .gameOver, .collecting:  // ← Blocca anche durante la raccolta
                     continue
                 default:
                     self.playNextCard()
@@ -97,7 +114,6 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Core Game
     func playNextCard() {
-        // blocca se gameOver/paused
         switch turnState {
         case .gameOver, .paused:
             return
@@ -107,13 +123,40 @@ final class GameViewModel: ObservableObject {
 
         if checkElimination() { return }
 
+        print("────────────────────────")
+        print("STATE BEFORE PLAY → \(turnState)")
+        print("isPlayerTurn BEFORE → \(isPlayerTurn ? "PLAYER" : "CPU")")
+        
+        let playedByPlayer: Bool
+        switch turnState {
+        case .normal(let p), .forced(let p, _):
+            playedByPlayer = p
+        default:
+            return
+        }
+
+        lastPlayedByPlayer = playedByPlayer
+
         let card = drawCard()
-        centerPile.append(card)
-        handleCard(card)
+
+        print("CARD DRAWN → \(card.value) by \(isPlayerTurn ? "PLAYER" : "CPU")")
+
+        displayMessage = lastPlayedByPlayer
+            ? "YOU THREW \(card.value)"
+            : "CPU THREW \(card.value)"
+        displayColor = lastPlayedByPlayer ? "green" : "yellow"
+
+        tablePile.append(card)
+        visiblePile.append((card: card, isPlayer: lastPlayedByPlayer))
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            self.handleCard(card)
+        }
     }
 
+
     private func drawCard() -> Card {
-        // controllo eliminazione SEMPRE prima di pescare
         if playerDeck.isEmpty {
             endGame(winner: "CPU")
             fatalError("Player deck empty")
@@ -123,74 +166,137 @@ final class GameViewModel: ObservableObject {
             fatalError("CPU deck empty")
         }
 
+        // Semplice: playerTurn indica sempre chi gioca
         switch turnState {
-        case .normal(let playerTurn):
+        case .normal(let playerTurn), .forced(let playerTurn, _):
             return playerTurn ? playerDeck.removeFirst() : cpuDeck.removeFirst()
-
-        case .forced(_, let flipperIsPlayer, _):
-            return flipperIsPlayer ? playerDeck.removeFirst() : cpuDeck.removeFirst()
-
         default:
             fatalError("drawCard called in invalid state: \(turnState)")
         }
     }
 
-    
-
     private func handleCard(_ card: Card) {
         switch turnState {
 
         case .normal(let playerTurn):
+
+            print("HANDLE NORMAL")
+            print("playerTurn = \(playerTurn ? "PLAYER" : "CPU")")
+            print("card = \(card.value)")
+
             if card.value <= 3 {
+
+                print("SPECIAL CARD \(card.value)")
+                print("→ Opponent must play \(card.value) cards")
+
                 turnState = .forced(
-                    flipsRemaining: card.value,
-                    flipperIsPlayer: !playerTurn,
-                    collectorIsPlayer: playerTurn
+                    playerTurn: !playerTurn,
+                    flipsRemaining: card.value
                 )
+
+        
+
+                print("NEW STATE → \(turnState)")
+                print("isPlayerTurn AFTER → \(isPlayerTurn ? "PLAYER" : "CPU")")
+
             } else {
+
+                print("NORMAL CARD → switch turn")
+
                 turnState = .normal(playerTurn: !playerTurn)
+
+
+                print("NEW STATE → \(turnState)")
+                print("isPlayerTurn AFTER → \(isPlayerTurn ? "PLAYER" : "CPU")")
             }
 
-        case .forced(let flipsRemaining, let flipper, let collector):
+
+        case .forced(let playerTurn, let flipsRemaining):
+
+            let collector = !playerTurn
+
+            print("HANDLE FORCED")
+            print("playerTurn (must play) = \(playerTurn ? "PLAYER" : "CPU")")
+            print("flipsRemaining = \(flipsRemaining)")
+            print("collector = \(collector ? "PLAYER" : "CPU")")
+            print("card = \(card.value)")
+
             if card.value <= 3 {
-                // chi ha appena giocato la nuova speciale
-                let newSpecialPlayer = flipper
 
-                // crea un NUOVO obbligo (rimpiazza il precedente)
+                print("NEW SPECIAL DURING FORCED")
+                print("→ Reset obligation to \(card.value)")
+                print("→ Opponent must respond")
+
                 turnState = .forced(
-                    flipsRemaining: card.value,          // nuovo conteggio
-                    flipperIsPlayer: !newSpecialPlayer,  // risponde l’avversario
-                    collectorIsPlayer: newSpecialPlayer  // chi raccoglie se fallisce
+                    playerTurn: !playerTurn,
+                    flipsRemaining: card.value
                 )
-                return
-            }
 
-            let newRemaining = flipsRemaining - 1
-            if newRemaining <= 0 {
-                collectCenter(byPlayer: collector)
-                turnState = .normal(playerTurn: !collector)
+
+                print("NEW STATE → \(turnState)")
+                print("isPlayerTurn AFTER → \(isPlayerTurn ? "PLAYER" : "CPU")")
+
             } else {
-                turnState = .forced(
-                    flipsRemaining: newRemaining,
-                    flipperIsPlayer: flipper,
-                    collectorIsPlayer: collector
-                )
+
+                let newRemaining = flipsRemaining - 1
+
+                print("NORMAL RESPONSE CARD")
+                print("Remaining BEFORE = \(flipsRemaining)")
+                print("Remaining AFTER = \(newRemaining)")
+
+                if newRemaining <= 0 {
+
+                    print("OBLIGATION FAILED")
+                    print("→ \(collector ? "PLAYER" : "CPU") WILL COLLECT")
+
+                    turnState = .collecting(collectorIsPlayer: collector)
+
+                    print("STATE → COLLECTING")
+
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+                        print("COLLECT CENTER PILE")
+                        self.collectCenter(byPlayer: collector)
+
+                        self.turnState = .normal(playerTurn: collector)
+                  
+
+                        print("STATE AFTER COLLECT → \(self.turnState)")
+                        print("isPlayerTurn AFTER COLLECT → \(self.isPlayerTurn ? "PLAYER" : "CPU")")
+                    }
+
+                } else {
+
+                    print("MUST CONTINUE PLAYING")
+                    print("Still \(newRemaining) cards to play")
+
+                    turnState = .forced(
+                        playerTurn: playerTurn,
+                        flipsRemaining: newRemaining
+                    )
+
+                    print("STATE CONTINUES → \(turnState)")
+                }
             }
+
 
         default:
             break
         }
     }
-
     
+ 
 
     private func collectCenter(byPlayer isPlayer: Bool) {
         if isPlayer {
-            playerDeck.append(contentsOf: centerPile)
+            playerDeck.append(contentsOf: tablePile)
         } else {
-            cpuDeck.append(contentsOf: centerPile)
+            cpuDeck.append(contentsOf: tablePile)
         }
-        centerPile.removeAll()
+        tablePile.removeAll()
+        visiblePile.removeAll()
+        
     }
 
     private func checkElimination() -> Bool {
@@ -201,16 +307,16 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Tap / Slap Rules
     private func collectionRule() -> String? {
-        guard centerPile.count >= 2 else { return nil }
+        guard tablePile.count >= 2 else { return nil }
 
-        let last = centerPile[centerPile.count - 1].value
-        let prev = centerPile[centerPile.count - 2].value
+        let last = tablePile[tablePile.count - 1].value
+        let prev = tablePile[tablePile.count - 2].value
 
         if last + prev == 10 { return "THE TEN!" }
         if last == prev { return "THE TWIN!" }
 
-        if centerPile.count >= 3 {
-            let third = centerPile[centerPile.count - 3].value
+        if tablePile.count >= 3 {
+            let third = tablePile[tablePile.count - 3].value
             if third == last { return "THE SANDWICH!" }
         }
 
@@ -226,13 +332,9 @@ final class GameViewModel: ObservableObject {
         gameMessage = message
         showMessage = true
 
-        // raccoglie sempre il player
         collectCenter(byPlayer: true)
-
-        // reset obbligo: dopo una raccolta “slap”, parte il player
         turnState = .normal(playerTurn: true)
 
-        // nascondi messaggio dopo un attimo
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             self?.showMessage = false
@@ -252,7 +354,6 @@ final class GameViewModel: ObservableObject {
             turnState = previous
         }
     }
-
 
     // MARK: - End Game
     private func endGame(winner: String) {

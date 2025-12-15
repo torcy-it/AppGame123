@@ -15,8 +15,8 @@ struct GameView: View {
         switch viewModel.turnState {
         case .normal(let playerTurn):
             return playerTurn
-        case .forced(_, let flipperIsPlayer, _):
-            return flipperIsPlayer
+        case .forced(let playerTurn, _):  // ← CORRETTO: ora usa playerTurn invece di flipperIsPlayer
+            return playerTurn
         default:
             return false
         }
@@ -72,35 +72,43 @@ struct GameView: View {
                 Spacer()
                 
                 // Indicatore turno - SOPRA LE CARTE
-                Text(isPlayerTurn ? "YOUR TURN" : "CPU TURN")
+                Text(viewModel.displayMessage)
                     .font(.custom("PressStart2P-Regular", size: 12))
                     .foregroundColor(
-                        isPlayerTurn
-                        ?Color(red: 0/255, green: 255/255, blue: 100/255)
-                        : Color(red: 218/255, green: 0/255, blue: 206/255)
+                        viewModel.displayColor == "green"
+                            ? Color(red: 0/255, green: 255/255, blue: 100/255)
+                            : viewModel.displayColor == "pink"
+                            ? Color(red: 218/255, green: 0/255, blue: 206/255)
+                            : Color(red: 255/255, green: 200/255, blue: 0/255)
                     )
                     .padding(.bottom, -20)
                 
                 // Centro del tavolo - Carte a ventaglio
                 ZStack {
-                    if !viewModel.centerPile.isEmpty {
-                        let totalCount = viewModel.centerPile.count
-                        let visibleCards = Array(viewModel.centerPile.suffix(3))
+                    if !viewModel.visiblePile.isEmpty {
+
+                        let totalCount = viewModel.visiblePile.count
+                        let visibleCards = viewModel.visiblePile   // sono già max 3
 
                         ForEach(visibleCards.indices, id: \.self) { i in
-                            let card = visibleCards[i]
-                            let realIndex = totalCount - visibleCards.count + i
-                            let slot = realIndex % 3
+                            let entry = visibleCards[i]
+                            let slot = i % 3
+                            let isLast = i == visibleCards.count - 1
 
-                            CardView(card: card)
-                                .scaleEffect(0.60)
-                                .rotationEffect(.degrees(rotationForSlot(slot)))
-                                .offset(
-                                    x: offsetXForSlot(slot),
-                                    y: offsetYForSlot(slot)
-                                )
-                                .zIndex(Double(realIndex))
+                            CardView(
+                                card: entry.card,
+                                isPlayerCard: entry.isPlayer,
+                                isLastPlayed: isLast
+                            )
+                            .scaleEffect(0.60)
+                            .rotationEffect(.degrees(rotationForSlot(slot)))
+                            .offset(
+                                x: offsetXForSlot(slot),
+                                y: offsetYForSlot(slot)
+                            )
+                            .zIndex(Double(i))
                         }
+
                     } else {
                         
                         // TAP TO START solo se è il turno del giocatore
@@ -258,7 +266,7 @@ struct GameView: View {
     }
     
     private func scaleForSlot(_ slot: Int) -> CGFloat {
-        return 0.60   
+        return 0.60
         
     }
 
@@ -325,10 +333,13 @@ struct GameView: View {
     }
 }
 
-// MARK: - Card View 
+// MARK: - Card View
 struct CardView: View {
     let card: Card
+    let isPlayerCard: Bool
+    let isLastPlayed: Bool
 
+    
     private let cardWidth: CGFloat = 140
     private let cardHeight: CGFloat = 200
     private let inset: CGFloat = 14   // distanza sicura dai bordi
@@ -344,14 +355,21 @@ struct CardView: View {
             // Carta
             RoundedRectangle(cornerRadius: 12)
                 .fill(
+                   
                     LinearGradient(
-                        colors: [
-                            Color(red: 100/255, green: 255/255, blue: 100/255),
-                            Color(red: 80/255, green: 240/255, blue: 80/255)
-                        ],
+                        colors: isPlayerCard
+                            ? [
+                                Color(red: 100/255, green: 255/255, blue: 100/255), // PLAYER verde
+                                Color(red: 80/255, green: 240/255, blue: 80/255)
+                              ]
+                            : [
+                                Color(red: 209/255, green: 211/255, blue: 38/255),   // D1D326
+                                  Color(red: 180/255, green: 185/255, blue: 30/255)
+                              ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
+        
                 )
                 .frame(width: cardWidth, height: cardHeight)
                 .overlay(
@@ -398,29 +416,6 @@ struct PixelNumber: View {
     }
 }
 
-// MARK: - Glass Back Button
-struct GlassBackButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 40, height: 40)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.ultraThinMaterial)
-
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                    }
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
 
 
 #Preview {

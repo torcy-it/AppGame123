@@ -30,7 +30,7 @@ final class GameViewModel: ObservableObject {
     @Published var cpuDeck: [Card] = []
     @Published var tablePile: [Card] = []
     @Published var visiblePile: [(card: Card, isPlayer: Bool)] = []
-
+    @Published var lastForcingCard: Card? = nil
     
     // UI state
     @Published var gameMessage = ""
@@ -42,6 +42,8 @@ final class GameViewModel: ObservableObject {
     // Display state - separato dalla logica per forzare aggiornamenti UI
     @Published var displayMessage = ""  // Cosa mostrare sullo schermo (YOUR TURN, CPU TURN, etc)
     @Published var displayColor: String = "green"  // "green", "pink", "yellow"
+    @Published var notificationMessage: String? = nil
+    
 
     // Game state
     @Published var turnState: TurnState = .normal(playerTurn: true)
@@ -151,7 +153,11 @@ final class GameViewModel: ObservableObject {
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 50_000_000)
-            self.handleCard(card)
+
+            guard case .collecting = self.turnState else {
+                self.handleCard(card)
+                return
+            }
         }
     }
 
@@ -188,14 +194,15 @@ final class GameViewModel: ObservableObject {
 
                 print("SPECIAL CARD \(card.value)")
                 print("→ Opponent must play \(card.value) cards")
+                
+                lastForcingCard = card
 
                 turnState = .forced(
                     playerTurn: !playerTurn,
                     flipsRemaining: card.value
                 )
 
-        
-
+    
                 print("NEW STATE → \(turnState)")
                 print("isPlayerTurn AFTER → \(isPlayerTurn ? "PLAYER" : "CPU")")
 
@@ -226,6 +233,8 @@ final class GameViewModel: ObservableObject {
                 print("NEW SPECIAL DURING FORCED")
                 print("→ Reset obligation to \(card.value)")
                 print("→ Opponent must respond")
+                
+                lastForcingCard = card
 
                 turnState = .forced(
                     playerTurn: !playerTurn,
@@ -250,6 +259,13 @@ final class GameViewModel: ObservableObject {
                     print("→ \(collector ? "PLAYER" : "CPU") WILL COLLECT")
 
                     turnState = .collecting(collectorIsPlayer: collector)
+                    
+                    // Usa solo lo starburst invece della notifica verde
+                    notificationMessage = collector
+                        ? "YOU BEAT CPU WITH A SPECIAL CARD!"
+                        : "CPU BEAT YOU WITH A SPECIAL CARD!"
+                    
+                    lastForcingCard = nil
 
                     print("STATE → COLLECTING")
 
@@ -258,6 +274,7 @@ final class GameViewModel: ObservableObject {
 
                         print("COLLECT CENTER PILE")
                         self.collectCenter(byPlayer: collector)
+                        self.notificationMessage = nil  // Nascondi lo starburst
 
                         self.turnState = .normal(playerTurn: collector)
                   
@@ -324,20 +341,78 @@ final class GameViewModel: ObservableObject {
     }
 
     func playerTap() {
-        guard let msg = collectionRule() else { return }
-        handlePlayerCollect(message: msg)
+        // Permetti tap durante .normal e .forced, blocca solo durante stati critici
+        switch turnState {
+        case .gameOver, .paused, .collecting:
+            return  // Non permettere tap durante questi stati
+        default:
+            break  // Continua per .normal e .forced
+        }
+        
+        // Controlla se c'è una regola valida
+        if let msg = collectionRule() {
+            handlePlayerCollect(message: msg)
+        } else {
+            // PENALTY: tap senza regola valida
+            handlePenalty()
+        }
     }
 
     private func handlePlayerCollect(message: String) {
-        gameMessage = message
-        showMessage = true
+        // Ferma temporaneamente l'auto-play per dare feedback visivo
+        autoPlayTask?.cancel()
+        
+        // Usa solo lo starburst
+        notificationMessage = message
+
+        turnState = .collecting(collectorIsPlayer: true)
 
         collectCenter(byPlayer: true)
-        turnState = .normal(playerTurn: true)
 
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            self?.showMessage = false
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            self?.notificationMessage = nil  // Nascondi lo starburst
+            self?.turnState = .normal(playerTurn: true)
+            self?.startAutoPlay()  // Riavvia l'auto-play
+        }
+    }
+
+    private func handlePenalty() {
+        // Controlla se il giocatore ha carte da dare
+        guard !playerDeck.isEmpty else { return }
+        
+        // Ferma l'auto-play
+        autoPlayTask?.cancel()
+        
+        // Mostra messaggio penalty
+        notificationMessage = "PENALTY\nPENALTY!"
+        
+        // Passa in stato collecting per bloccare il gioco
+        let previousState = turnState
+        turnState = .collecting(collectorIsPlayer: false)
+        
+        Task { [weak self] in
+            guard let self else { return }
+            
+            // Aspetta un momento per mostrare il messaggio
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            
+            // Trasferisci una carta dal giocatore alla CPU
+            if !self.playerDeck.isEmpty {
+                let penaltyCard = self.playerDeck.removeFirst()
+                self.cpuDeck.append(penaltyCard)
+                
+                print("PENALTY: Player gives card (\(penaltyCard.value)) to CPU")
+            }
+            
+            // Nascondi il messaggio
+            self.notificationMessage = nil
+            
+            // Ripristina lo stato precedente
+            self.turnState = previousState
+            
+            // Riavvia l'auto-play
+            self.startAutoPlay()
         }
     }
 

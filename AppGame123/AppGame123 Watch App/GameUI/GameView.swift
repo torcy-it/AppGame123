@@ -22,6 +22,27 @@ struct GameView: View {
         }
     }
     
+    private var collectingMessage: String? {
+        if case .collecting(let collectorIsPlayer) = viewModel.turnState {
+            return collectorIsPlayer
+            ? "YOU TOOK ALL\nCARDS ON THE\nTABLE !!"
+            : "CPU TOOK ALL\nCARDS ON THE\nTABLE !!"
+        }
+        return nil
+    }
+    
+    private var starburstMessage: String? {
+        if let collecting = collectingMessage {
+            return collecting
+        }
+
+        if viewModel.showMessage {
+            return viewModel.gameMessage
+        }
+
+        return nil
+    }
+    
     private var isPaused: Bool {
         if case .paused = viewModel.turnState { return true }
         return false
@@ -87,7 +108,7 @@ struct GameView: View {
                 ZStack {
                     if !viewModel.visiblePile.isEmpty {
 
-                        let totalCount = viewModel.visiblePile.count
+        
                         let visibleCards = viewModel.visiblePile   // sono già max 3
 
                         ForEach(visibleCards.indices, id: \.self) { i in
@@ -139,25 +160,32 @@ struct GameView: View {
                 }
             }
             
-            // Messaggio di raccolta
-            if viewModel.showMessage {
-                VStack(spacing: 15) {
-                    Text(viewModel.gameMessage)
-                        .font(.custom("PressStart2P-Regular", size: 15))
-                        .foregroundColor(.black)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 180, height: 80)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(red: 0/255, green: 255/255, blue: 100/255))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.black, lineWidth: 4)
-                                )
-                        )
+            if let message = viewModel.notificationMessage {
+                VStack {
+                    
+                    Spacer()
+
+                    ZStack {
+                        Image("ImgStarbust")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 220)
+
+                        Text(message)
+                            .font(.custom("PressStart2P-Regular", size: 12))
+                            .foregroundColor(.black)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                    .offset(y: 20)
+
+                    Spacer()
+                    
                 }
-                .offset(y: 35)
+                .transition(.opacity)
+                
             }
+
             
             // FINESTRA PAUSA
             if isPaused && !viewModel.gameOver {
@@ -264,6 +292,8 @@ struct GameView: View {
 
         }
     }
+    
+
     
     private func scaleForSlot(_ slot: Int) -> CGFloat {
         return 0.60
@@ -416,8 +446,79 @@ struct PixelNumber: View {
     }
 }
 
+struct StarburstShape: Shape {
+    let points: Int = 16
+    let innerRadiusRatio: CGFloat = 0.55
+
+    let horizontalStretch: CGFloat = 1.45
+    let verticalStretch: CGFloat = 1.15
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+
+        let baseRadius = min(rect.width, rect.height) / 2
+        let outerRadius = baseRadius
+        let innerRadius = baseRadius * innerRadiusRatio
+
+        let angleStep = .pi * 2 / CGFloat(points * 2)
+
+        var path = Path()
+
+        for i in 0..<(points * 2) {
+            let radius: CGFloat
+            if i.isMultiple(of: 2) {
+                radius = outerRadius
+            } else {
+                // irregolarità fumetto
+                radius = innerRadius * (i.isMultiple(of: 4) ? 0.9 : 1.1)
+            }
+
+            let angle = CGFloat(i) * angleStep - .pi / 2
+
+            let x = center.x + cos(angle) * radius * horizontalStretch
+            let y = center.y + sin(angle) * radius * verticalStretch
+
+            let point = CGPoint(x: x, y: y)
+
+            if i == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+
+        path.closeSubpath()
+        return path
+    }
+}
+
+
 
 
 #Preview {
-    
+
+
+    VStack {
+        Spacer()
+
+        ZStack {
+            Image("ImgStarbust")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 220)
+
+            Text("CPU TOOK ALL  CARDS ON THE TABLE !!")
+                .font(.custom("PressStart2P-Regular", size: 12))
+                .foregroundColor(.black)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+
+
+        Spacer()
+    }
+    .transition(.opacity)
+
+
 }
+

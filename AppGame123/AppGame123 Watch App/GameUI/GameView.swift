@@ -355,22 +355,22 @@ struct CardView: View {
             // Carta
             RoundedRectangle(cornerRadius: 12)
                 .fill(
-                   
-                    LinearGradient(
-                        colors: isPlayerCard
-                            ? [
-                                Color(red: 100/255, green: 255/255, blue: 100/255), // PLAYER verde
+                    isPlayerCard
+                    ? AnyShapeStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 100/255, green: 255/255, blue: 100/255),
                                 Color(red: 80/255, green: 240/255, blue: 80/255)
-                              ]
-                            : [
-                                Color(red: 209/255, green: 211/255, blue: 38/255),   // D1D326
-                                  Color(red: 180/255, green: 185/255, blue: 30/255)
-                              ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-        
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                      )
+                    : AnyShapeStyle(
+                        Color(red: 209/255, green: 211/255, blue: 38/255)
+                      )
                 )
+
                 .frame(width: cardWidth, height: cardHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
